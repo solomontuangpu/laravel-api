@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\ProductResource;
+use App\Models\Photo;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ProductApiController extends Controller
 {
@@ -15,7 +18,8 @@ class ProductApiController extends Controller
     public function index()
     {
         $products = Product::latest("id")->paginate(10);
-        return response()->json($products);
+       // return response()->json($products);
+       return ProductResource::collection($products);
     }
 
     /**
@@ -26,19 +30,36 @@ class ProductApiController extends Controller
      */
     public function store(Request $request)
     {
+
         $request->validate([
             "name" => "required|min:3",
             "price" => "required|numeric|min:1",
-            "stock" => "required|numeric|min:1"
+            "stock" => "required|numeric|min:0",
+            "photos" => "required",
+            "photos.*" => "file|mimes:jpg,png|max:512"
         ]);
 
         $product = Product::create([
             "name" => $request->name,
             "price" => $request->price,
-            "stock" => $request->stock
+            "stock" => $request->stock,
+            "user_id" => Auth::id()
         ]);
 
-        return response()->json($product);
+        $photos = [];
+        foreach($request->file('photos') as $key=>$photo){
+            $newName = $photo->store("public");
+            $photos[$key] = new Photo([
+                "name" => $newName
+            ]);
+        }
+
+        $product->photos()->saveMany($photos);
+
+        return response()->json([
+            "message" => "success",
+            "product" => new ProductResource($product)
+        ]);
     }
 
     /**
@@ -48,14 +69,14 @@ class ProductApiController extends Controller
      * @return \Illuminate\Http\Response
      */
     public function show($id)
-    {   
+    {
         $product = Product::find($id);
         if(is_null($product)){
             return response()->json([
                 "message" => "Post Not Found"
             ], 404);
         }
-        return response()->json($product);
+        return new ProductResource($product);
     }
 
     /**
@@ -67,7 +88,29 @@ class ProductApiController extends Controller
      */
     public function update(Request $request, $id)
     {
-        //
+        $request->validate([
+            "name" => "nullable|min:3",
+            "price" => "nullable|numeric|min:1",
+            "stock" => "nullable|numeric|min:1"
+        ]);
+        $product = Product::find($id);
+        if(is_null($product)){
+            return response()->json([
+               "message" => "Product not found!"
+            ]);
+        }
+
+        if($request->has('name')) {
+            $product->name = $request->name;
+        }
+        if($request->has('price')) {
+            $product->price = $request->price;
+        }
+        if($request->has('stock')) {
+            $product->stock = $request->stock;
+        }
+        $product->update();
+        return response()->json($product);
     }
 
     /**
